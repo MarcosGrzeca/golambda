@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -91,8 +90,6 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 				}
 
 				log.Printf("Successfully processed message ID: %s", record.MessageId)
-				// Sleep for a specified duration between processing messages
-				time.Sleep(2 * time.Second) // Adjust the duration as needed
 			}
 		}(groupID, records)
 	}
