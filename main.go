@@ -15,14 +15,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type Payload struct {
-	Product int `json:"product"`
-	SKU     int `json:"sku"`
-}
-
 type Body struct {
-	URL     string  `json:"url"`
-	Payload Payload `json:"payload"`
+	URL     string          `json:"url"`
+	Payload json.RawMessage `json:"payload"`
 }
 
 type Message struct {
@@ -67,11 +62,12 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 
 			log.Printf("Processing group ID: %s", groupID)
 			for _, record := range records {
-				log.Printf("Processing message ID: %s", record.MessageId)
+				traceId := uuid.New().String()
+				log.Printf("[%s]Processing message ID: %s", traceId, record.MessageId)
 
-				m, err := parse(record)
+				m, err := parse(record, traceId)
 				if err != nil {
-					fmt.Println("Error:", err)
+					fmt.Println("[%s] Error:", traceId, err)
 					mu.Lock()
 
 					batchItemFailures = append(batchItemFailures, map[string]interface{}{"itemIdentifier": record.MessageId})
@@ -80,14 +76,14 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 					break
 				}
 
-				statusCode, err := callExternalAPI(m.Body)
+				statusCode, err := callExternalAPI(m.Body, traceId)
 				if err != nil {
 					mu.Lock()
 
 					batchItemFailures = append(batchItemFailures, map[string]interface{}{"itemIdentifier": m.MessageId})
 					mu.Unlock()
 
-					log.Printf("Error processing message ID %s: %v", record.MessageId, err)
+					log.Printf("[%s] Error processing message ID %s: %v", traceId, record.MessageId, err)
 					break
 				}
 
@@ -97,11 +93,11 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 					batchItemFailures = append(batchItemFailures, map[string]interface{}{"itemIdentifier": m.MessageId})
 					mu.Unlock()
 
-					log.Printf("API returned error for message ID %s: status code %d", record.MessageId, statusCode)
+					log.Printf("[%s] API returned error for message ID %s: status code %d", traceId, record.MessageId, statusCode)
 					break
 				}
 
-				log.Printf("Successfully processed message ID: %s", record.MessageId)
+				log.Printf("[%s] Successfully processed message ID: %s", traceId, record.MessageId)
 			}
 		}(groupID, records)
 	}
@@ -115,29 +111,22 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 }
 
 // callExternalAPI sends a POST request to an external API with the message body.
-func callExternalAPI(body Body) (int, error) {
-	requestBody, err := json.Marshal(
-		body.Payload,
-	)
+func callExternalAPI(body Body, traceId string) (int, error) {
+	resp, err := http.Post(body.URL, "application/json", bytes.NewBuffer(body.Payload))
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal request body: %w", err)
-	}
-
-	resp, err := http.Post(body.URL, "application/json", bytes.NewBuffer(requestBody))
-	if err != nil {
-		return 0, fmt.Errorf("failed to call external API: %w", err)
+		return 0, fmt.Errorf("[%s] failed to call external API: %w", traceId, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		responseBody, _ := ioutil.ReadAll(resp.Body)
-		log.Printf("API error: %s", responseBody)
+		log.Printf("[%s] API error: %s", traceId, responseBody)
 	}
 
 	return resp.StatusCode, nil
 }
 
-func parse(event events.SQSMessage) (Message, error) {
+func parse(event events.SQSMessage, traceId string) (Message, error) {
 	var msg Message
 	msg.MessageAttributes = event.MessageAttributes
 	msg.MessageId = event.MessageId
@@ -151,12 +140,12 @@ func parse(event events.SQSMessage) (Message, error) {
 	var body Body
 	err := json.Unmarshal([]byte(event.Body), &body)
 	if err != nil {
-		fmt.Println("Error unmarshalling body JSON:", err)
+		fmt.Println("[%s] Error unmarshalling body JSON:", traceId, err)
 		return Message{}, fmt.Errorf("error parsing JSON: %w", err) // Return empty Message and the error
 	}
 	msg.Body = body
 
-	fmt.Printf("Message: %+v\n", msg)
+	fmt.Printf("[%s] Message: %+v\n", traceId, msg)
 	return msg, nil
 }
 
