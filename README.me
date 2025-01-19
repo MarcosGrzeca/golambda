@@ -1,0 +1,18 @@
+docker build -t go-lambda-sqs .
+docker run -p 9000:8080 go-lambda-sqs
+
+
+
+``
+curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{
+    "Records": [
+        {
+            "messageId": "1",
+            "body": "{
+                    
+
+            }"
+        }
+    ]
+}'
+```
