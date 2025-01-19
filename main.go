@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/google/uuid"
 )
 
 type Payload struct {
@@ -32,6 +33,22 @@ type Message struct {
 	MessageGroupID    string
 }
 
+func groupMessagesByMessaGROUPID(event events.SQSEvent) map[string][]events.SQSMessage {
+
+	// Group messages by MessageGroupID
+	messageGroups := make(map[string][]events.SQSMessage)
+	for _, record := range event.Records {
+		//Standard queues do not have MessageGroupID
+		groupID, ok := record.Attributes["MessageGroupID"]
+		if !ok {
+			groupID = uuid.New().String()
+		}
+		messageGroups[groupID] = append(messageGroups[groupID], record)
+
+	}
+	return messageGroups
+}
+
 // HandleRequest processes SQS events and calls the external API.
 func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]interface{}, error) {
 
@@ -39,12 +56,7 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 	var wg sync.WaitGroup
 	mu := &sync.Mutex{}
 
-	// Group messages by MessageGroupID
-	messageGroups := make(map[string][]events.SQSMessage)
-	for _, record := range event.Records {
-		groupID := record.Attributes["MessageGroupID"]
-		messageGroups[groupID] = append(messageGroups[groupID], record)
-	}
+	messageGroups := groupMessagesByMessaGROUPID(event)
 
 	// Process each group sequentially
 	for groupID, records := range messageGroups {
@@ -130,8 +142,6 @@ func parse(event events.SQSMessage) (Message, error) {
 	msg.MessageAttributes = event.MessageAttributes
 	msg.MessageId = event.MessageId
 	msg.Attributes = event.Attributes
-
-	fmt.Println(event.Attributes)
 
 	if val, ok := event.Attributes["MessageGroupID"]; ok {
 		msg.MessageGroupID = val
