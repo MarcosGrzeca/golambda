@@ -77,7 +77,7 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 					batchItemFailures = append(batchItemFailures, map[string]interface{}{"itemIdentifier": record.MessageId})
 					mu.Unlock()
 
-					continue
+					break
 				}
 
 				statusCode, err := callExternalAPI(m.Body)
@@ -88,7 +88,7 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 					mu.Unlock()
 
 					log.Printf("Error processing message ID %s: %v", record.MessageId, err)
-					continue
+					break
 				}
 
 				if statusCode >= 400 {
@@ -98,7 +98,7 @@ func HandleRequest(ctx context.Context, event events.SQSEvent) (map[string]inter
 					mu.Unlock()
 
 					log.Printf("API returned error for message ID %s: status code %d", record.MessageId, statusCode)
-					continue
+					break
 				}
 
 				log.Printf("Successfully processed message ID: %s", record.MessageId)
